@@ -1,36 +1,20 @@
-import numpy as np
+import pandas as pd
 import pickle
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.preprocessing.text import Tokenizer
 
-# Load tokenizer
-with open('tokenizer.pkl', 'rb') as f:
-    tokenizer = pickle.load(f)
+# Parameters
+max_words = 10000  # Same as used during training
+dataset_path = 'processed_data.csv'  # Replace with your actual dataset path
 
-# Load model
-model = load_model('sentiment_resnet_model.keras')
+# Load dataset
+df = pd.read_csv(dataset_path)
 
-# Parameters used in training
-max_len = 100  # Must match the value used during training
+# Fit tokenizer
+tokenizer = Tokenizer(num_words=max_words)
+tokenizer.fit_on_texts(df['text'])
 
-# Label map (use the same encoding used while training)
-label_map = {0: 'NEGATIVE', 1: 'NEUTRAL', 2: 'POSITIVE'}  # Change this if your labels differ
+# Save tokenizer to a file
+with open('tokenizer.pkl', 'wb') as f:
+    pickle.dump(tokenizer, f)
 
-# Function to predict sentiment
-def predict_sentiment(text):
-    seq = tokenizer.texts_to_sequences([text])
-    padded = pad_sequences(seq, maxlen=max_len)
-    
-    pred = model.predict(padded)[0]  # Softmax scores
-    sentiment_idx = np.argmax(pred)
-    sentiment_label = label_map[sentiment_idx]
-    confidence_score = pred[sentiment_idx]
-
-    print(f"Text: {text}")
-    print(f"Predicted Sentiment: {sentiment_label}")
-    print(f"Confidence Score: {confidence_score:.2f}")
-    return sentiment_label, confidence_score
-
-# 🔍 Example usage:
-text_input = "I'm extremely unhappy with how things turned out."
-predict_sentiment(text_input)
+print("✅ Tokenizer has been saved as 'tokenizer.pkl'")
