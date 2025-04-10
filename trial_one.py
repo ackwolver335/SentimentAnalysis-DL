@@ -1,107 +1,95 @@
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pickle
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, classification_report
+
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Embedding, Conv1D, GlobalMaxPooling1D, Dense, Input, add
+from tensorflow.keras.layers import Input, Embedding, Conv1D, MaxPooling1D, Concatenate, GlobalMaxPooling1D, Dense, Dropout
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.utils import to_categorical
 
-# Load dataset (ensure your CSV has the expected number of rows)
-data = pd.read_csv('processed_data.csv', low_memory=False)
-print("Dataset shape:", data.shape)  # Should be around (200000, ...)
+# === 1. Load Dataset ===
+df = pd.read_csv("processed_data.csv",low_memory = False)  # Replace with your actual file
+df.dropna(subset=["text", "label"], inplace=True)
 
-# Extract relevant columns (ensure texts are strings)
-texts = data['text'].astype(str)
-labels = data['label']
-scores = data['score']
+# === 2. Map String Labels to Integers ===
+label_map = {'NEGATIVE': 0, 'NEUTRAL': 1, 'POSITIVE': 2}
+df['label'] = df['label'].map(label_map)
 
-# Encode sentiment labels
-label_encoder = LabelEncoder()
-encoded_labels = label_encoder.fit_transform(labels)
+# === 3. Preprocess Text ===
+max_words = 5000
+max_len = 100
 
-# Tokenize text data
-vocab_size = 5000       # Adjust vocabulary size as needed
-maxlen = 100            # Maximum length of each text sequence
-tokenizer = Tokenizer(num_words=vocab_size)
-tokenizer.fit_on_texts(texts)
-sequences = tokenizer.texts_to_sequences(texts)
-padded_sequences = pad_sequences(sequences, maxlen=maxlen)
+tokenizer = Tokenizer(num_words=max_words, oov_token="<OOV>")
+tokenizer.fit_on_texts(df["text"])
+sequences = tokenizer.texts_to_sequences(df["text"])
+X = pad_sequences(sequences, maxlen=max_len)
 
-# Split the dataset into training and test sets (80/20 split)
-x_train, x_test, y_train_label, y_test_label, y_train_score, y_test_score = train_test_split(
-    padded_sequences, encoded_labels, scores, test_size=0.2, random_state=42)
-print("x_train shape:", x_train.shape)
-print("x_test shape:", x_test.shape)
+# Save tokenizer for future use
+with open("tokenizer.pkl", "wb") as f:
+    pickle.dump(tokenizer, f)
 
-# Build the multi-task model (ResNet-inspired architecture)
+# === 4. Prepare Labels ===
+y = to_categorical(df["label"], num_classes=3)
 
-# Input layer (each sample has length = maxlen)
-input_layer = Input(shape=(maxlen,))
+# === 5. Train/Test Split ===
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Embedding layer converts words to dense vectors
-embedding = Embedding(input_dim=vocab_size, output_dim=128)(input_layer)
+# === 6. Define Inception Module ===
+def inception_module(x, filters):
+    conv1 = Conv1D(filters, 1, activation='relu', padding='same')(x)
+    conv3 = Conv1D(filters, 3, activation='relu', padding='same')(x)
+    conv5 = Conv1D(filters, 5, activation='relu', padding='same')(x)
+    pool = MaxPooling1D(pool_size=3, strides=1, padding='same')(x)
+    output = Concatenate()([conv1, conv3, conv5, pool])
+    return output
 
-# Convolutional block
-conv1 = Conv1D(filters=64, kernel_size=3, activation='relu', padding='same')(embedding)
-conv2 = Conv1D(filters=64, kernel_size=3, activation='relu', padding='same')(conv1)
+# === 7. Build the Model ===
+input_layer = Input(shape=(max_len,))
+x = Embedding(input_dim=max_words, output_dim=128)(input_layer)
 
-# Projection layer for residual connection (1x1 convolution)
-projected = Conv1D(filters=64, kernel_size=1, activation='relu', padding='same')(embedding)
+x = inception_module(x, 64)
+x = inception_module(x, 32)
 
-# Residual connection
-residual = add([projected, conv2])
+x = GlobalMaxPooling1D()(x)
+x = Dense(128, activation='relu')(x)
+x = Dropout(0.5)(x)
+output_layer = Dense(3, activation='softmax')(x)
 
-# Global pooling and dense layers
-global_pool = GlobalMaxPooling1D()(residual)
-dense = Dense(64, activation='relu')(global_pool)
+model = Model(inputs=input_layer, outputs=output_layer)
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-# Two output layers:
-#   - score_output: regression (using sigmoid)
-#   - type_output: classification (using softmax)
-score_output = Dense(1, activation='sigmoid', name='score_output')(dense)
-type_output = Dense(3, activation='softmax', name='type_output')(dense)
-
-# Define and compile the model with appropriate losses and metrics
-model = Model(inputs=input_layer, outputs=[score_output, type_output])
-model.compile(optimizer='adam',
-              loss={'score_output': 'mean_squared_error', 
-                    'type_output': 'sparse_categorical_crossentropy'},
-              metrics={'score_output': 'mse', 
-                       'type_output': 'accuracy'})
-
+# Show model summary
 model.summary()
 
-# Train the model
-history = model.fit(x_train, 
-                    {'score_output': y_train_score, 'type_output': y_train_label},
-                    epochs=5,
-                    batch_size=32,           # Change this value to adjust the batch size
-                    validation_split=0.2)
+# === 8. Train Model ===
+history = model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test))
 
-# Evaluate the model on the test set
-results = model.evaluate(x_test, {'score_output': y_test_score, 'type_output': y_test_label})
-print("Test Loss (Score):", results[1])
-print("Test Loss (Type):", results[2])
-print("Test Accuracy (Type):", results[4]*100, "%")
+# === 9. Evaluate the Model ===
+loss, accuracy = model.evaluate(X_test, y_test)
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
 
-# Prediction on a sample text
-sample_text = "The Product was absolutely fantastic"
-sample_seq = tokenizer.texts_to_sequences([sample_text])
-sample_pad = pad_sequences(sample_seq, maxlen=maxlen)
-pred_score, pred_type = model.predict(sample_pad)
+# === 10. Confusion Matrix and Report ===
+y_pred = model.predict(X_test)
+y_pred_classes = np.argmax(y_pred, axis=1)
+y_true = np.argmax(y_test, axis=1)
 
-# Process predictions:
-# For the regression head, use a threshold (e.g., 0.5) to determine sentiment
-threshold = 0.5
-sentiment_score = pred_score[0][0]
-sentiment_from_score = "POSITIVE" if sentiment_score >= threshold else "NEGATIVE"
+labels = ['NEGATIVE', 'NEUTRAL', 'POSITIVE']
+cm = confusion_matrix(y_true, y_pred_classes)
 
-# For the classification head, take the argmax and decode it back to a label
-sentiment_type_index = np.argmax(pred_type[0])
-sentiment_type = label_encoder.inverse_transform([sentiment_type_index])[0]
+sns.heatmap(cm, annot=True, fmt='d', cmap='Purples', xticklabels=labels, yticklabels=labels)
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
 
-print("Sentiment Score (Regression):", round(sentiment_score, 2))
-print("Sentiment from Score (using threshold):", sentiment_from_score)
-print("Sentiment Type (Classification):", sentiment_type)
+print("\nClassification Report:")
+print(classification_report(y_true, y_pred_classes, target_names=labels))
+
+# === 11. Save the Model ===
+model.save("sentiment_google_net.keras")
