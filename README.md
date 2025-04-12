@@ -1,4 +1,6 @@
-# 👨‍💻 Sentence Based 📰 Sentiment Analysis - Deep Learning 🗯️
+# 📰 Sentiment Analysis - Deep Learning 🗯️
+
+#### Sentence Based Sentiment Analysis
 
 📌 A sentence-level sentiment analysis system built in **Python** using a custom deep learning model inspired by **ResNet** and **GoogleNet** architectures. This project performs sentence-level sentiment analysis using a custom deep learning model built in Python.
 
@@ -26,13 +28,22 @@ The architecture takes inspiration from ResNet and GoogleNet, enabling effective
 
 📄 Providing you the demo example regarding an overview of **" How this Model works ? "**, example is shown below
 
+📍Remember to go in this **[resnet_model](https://github.com/ackwolver335/SentimentAnalysis-DL/tree/main/resnet_model)** folder before running the code below for getting sample result ready 👍🏻
+
 ```bash
 python model_test1.py
+```
+
+📤 **Code Output** →
+
+```bash
 Text: I'm extremely unhappy with how things turned out.
 Predicted Sentiment: NEGATIVE
 Confidence Score: 0.99
 ```
 
-📝 **Remember** : This particular sentiment is analysed using one model only, but as both the model's are good, we could gather a good accuracy with the textual content that we have provided.
+#### Sample Output Image
 
 ![Image](https://github.com/user-attachments/assets/391656f9-ae89-4a71-a3bb-49dc82dd87b1)
+
+📝 **Remember** : This particular sentiment is analysed using one model only, but as both the model's are good, we could gather a good accuracy with the textual content that we have provided.
